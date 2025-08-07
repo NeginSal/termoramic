@@ -5,9 +5,16 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type model struct{}
+
+var style = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FAFAFA")).
+	Background(lipgloss.Color("#874BFD")).
+	Bold(true).
+	Padding(1, 2)
 
 func (m model) Init() tea.Cmd {
 	return nil
@@ -18,7 +25,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	return "🌸 Welcome to Termoramic!"
+	return style.Render("Welcome!")
 }
 
 func main() {
