@@ -11,21 +11,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Tick message for animation
+// tickMsg is emitted by tea.Tick to drive animations.
 type tickMsg time.Time
 
-// Star represents each element on screen
+// Grid size kept simple on purpose (no window-size handling for now).
+const (
+	GridCols = 20
+	GridRows = 10
+)
+
+// Theme IDs for clarity (must match the themes slice order).
+const (
+	ThemeStarry = iota
+	ThemeFlowers
+	ThemeOcean
+)
+
+// Star is a renderable item on the grid.
 type Star struct {
-	X       int
-	Y       int
-	Visible bool
-	Symbol  string
+	X       int    // column (0..GridCols-1)
+	Y       int    // row (0..GridRows-1)
+	Visible bool   // whether to draw it or not
+	Symbol  string // emoji/symbol to print (✨, 🌸, 🌊, ...)
+	DX      int    // horizontal velocity (used by Flowers/Ocean)
 }
 
-// Number of stars/elements
+// Number of items to render.
 const StarCount = 40
 
-// Theme struct holds the colors and symbols
+// Theme defines colors and available symbols for a theme.
 type Theme struct {
 	Name       string
 	Background string
@@ -33,7 +47,7 @@ type Theme struct {
 	Symbols    []string
 }
 
-// List of themes
+// Themes list (order must match Theme* consts).
 var themes = []Theme{
 	{
 		Name:       "Starry Sky",
@@ -55,15 +69,13 @@ var themes = []Theme{
 	},
 }
 
-// Main program model
+// model holds the program state.
 type model struct {
-	stars  []Star
-	theme  int
-	width  int
-	height int
+	stars []Star
+	theme int // ThemeStarry / ThemeFlowers / ThemeOcean
 }
 
-// Lipgloss style for a theme
+// styleForTheme builds a lipgloss style for the current theme.
 func styleForTheme(t Theme) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(t.Foreground)).
@@ -71,37 +83,91 @@ func styleForTheme(t Theme) lipgloss.Style {
 		Padding(1, 2)
 }
 
-// Initialize stars randomly for a theme
-func initStars(t Theme) []Star {
+// initStars creates initial items based on the selected theme.
+// Simplicity: we use a fixed GridCols x GridRows grid.
+func initStars(themeID int) []Star {
+	t := themes[themeID]
 	stars := make([]Star, StarCount)
 	for i := 0; i < StarCount; i++ {
+		dx := 0
+		switch themeID {
+		case ThemeFlowers:
+			// Flowers sway left/right: start with -1 or +1 randomly.
+			if rand.Intn(2) == 0 {
+				dx = -1
+			} else {
+				dx = 1
+			}
+		case ThemeOcean:
+			// Ocean flows to the right.
+			dx = 1
+		}
+
 		stars[i] = Star{
-			X:       rand.Intn(20), // fixed columns for simplicity
-			Y:       rand.Intn(10), // fixed rows for simplicity
-			Visible: rand.Intn(2) == 0,
+			X:       rand.Intn(GridCols),
+			Y:       rand.Intn(GridRows),
+			Visible: rand.Intn(2) == 0, // ~50% visible initially
 			Symbol:  t.Symbols[rand.Intn(len(t.Symbols))],
+			DX:      dx,
 		}
 	}
 	return stars
 }
 
-// Initialize program
+// Init schedules the first tick to start animations.
 func (m model) Init() tea.Cmd {
 	return tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
-// Update function handles ticks and keypresses
+// Update handles ticks and keypresses, animating per theme.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
 	case tickMsg:
-		// Toggle some stars on/off
-		for i := range m.stars {
-			if rand.Intn(100) < 30 {
-				m.stars[i].Visible = !m.stars[i].Visible
+		// Per-theme animation behavior
+		switch m.theme {
+
+		case ThemeStarry:
+			// Blink randomly: toggle visibility with small probability.
+			for i := range m.stars {
+				if rand.Intn(100) < 30 { // 30% chance to flip
+					m.stars[i].Visible = !m.stars[i].Visible
+				}
+			}
+
+		case ThemeFlowers:
+			// Flowers sway: move horizontally and bounce at edges.
+			for i := range m.stars {
+				// Optional subtle blinking for life-like feel
+				if rand.Intn(100) < 10 {
+					m.stars[i].Visible = !m.stars[i].Visible
+				}
+				m.stars[i].X += m.stars[i].DX
+				// Bounce when hitting edges
+				if m.stars[i].X < 0 {
+					m.stars[i].X = 0
+					m.stars[i].DX = 1
+				}
+				if m.stars[i].X >= GridCols {
+					m.stars[i].X = GridCols - 1
+					m.stars[i].DX = -1
+				}
+			}
+
+		case ThemeOcean:
+			// Ocean flows: shift to the right with wrap-around.
+			for i := range m.stars {
+				// Light shimmer
+				if rand.Intn(100) < 10 {
+					m.stars[i].Visible = !m.stars[i].Visible
+				}
+				m.stars[i].X = (m.stars[i].X + 1) % GridCols
 			}
 		}
+
+		// Schedule the next tick
 		return m, tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
 			return tickMsg(t)
 		})
@@ -111,26 +177,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "1":
-			m.theme = 0
-			m.stars = initStars(themes[m.theme])
+			m.theme = ThemeStarry
+			m.stars = initStars(m.theme)
 		case "2":
-			m.theme = 1
-			m.stars = initStars(themes[m.theme])
+			m.theme = ThemeFlowers
+			m.stars = initStars(m.theme)
 		case "3":
-			m.theme = 2
-			m.stars = initStars(themes[m.theme])
+			m.theme = ThemeOcean
+			m.stars = initStars(m.theme)
 		}
 		return m, nil
 	}
 	return m, nil
 }
 
-// Render the stars in a simple fixed grid
+// renderStarsGrid draws the current items on a fixed-size grid.
 func renderStarsGrid(stars []Star) string {
-	cols := 20
-	rows := 10
+	cols := GridCols
+	rows := GridRows
 
-	// Create a 2D grid as a map
+	// Map occupied cells to the symbol to render.
 	pos := make(map[int]string, len(stars))
 	for _, s := range stars {
 		if s.Visible && s.X >= 0 && s.X < cols && s.Y >= 0 && s.Y < rows {
@@ -139,14 +205,14 @@ func renderStarsGrid(stars []Star) string {
 		}
 	}
 
-	// Build the grid as a string
+	// Build the grid line by line.
 	var sb strings.Builder
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
 			if sym, ok := pos[r*cols+c]; ok {
 				sb.WriteString(sym)
 			} else {
-				sb.WriteString("  ") // empty space
+				sb.WriteString("  ") // empty spaces keep layout aligned
 			}
 		}
 		sb.WriteString("\n")
@@ -154,20 +220,22 @@ func renderStarsGrid(stars []Star) string {
 	return sb.String()
 }
 
-// View function renders the header + stars
+// View renders the header and the themed content box.
 func (m model) View() string {
-	header := fmt.Sprintf("Theme: %s | Press 1,2,3 to change | q to quit\n\n", themes[m.theme].Name)
+	header := fmt.Sprintf("Theme: %s | 1:Starry  2:Flowers  3:Ocean | q:quit\n\n", themes[m.theme].Name)
 	content := renderStarsGrid(m.stars)
 	return styleForTheme(themes[m.theme]).Render(header + content)
 }
 
-// Main entry point
+// main sets up initial state and starts the Bubble Tea program.
 func main() {
 	rand.Seed(time.Now().UnixNano())
+
 	initial := model{
-		theme: 0,
-		stars: initStars(themes[0]),
+		theme: ThemeStarry,
+		stars: initStars(ThemeStarry),
 	}
+
 	p := tea.NewProgram(initial, tea.WithAltScreen())
 	if err := p.Start(); err != nil {
 		fmt.Println("Error running program:", err)
