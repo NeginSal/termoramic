@@ -71,8 +71,9 @@ var themes = []Theme{
 
 // model holds the program state.
 type model struct {
-	stars []Star
-	theme int // ThemeStarry / ThemeFlowers / ThemeOcean
+	stars  []Star
+	theme  int  // ThemeStarry / ThemeFlowers / ThemeOcean
+	paused bool // whether animation is paused
 }
 
 // styleForTheme builds a lipgloss style for the current theme.
@@ -91,7 +92,6 @@ func initStars(themeID int) []Star {
 	for i := 0; i < StarCount; i++ {
 		// Default horizontal velocity
 		dx := 0
-
 		switch themeID {
 		case ThemeFlowers:
 			// Flowers sway left/right: start with -1 or +1 randomly.
@@ -104,7 +104,6 @@ func initStars(themeID int) []Star {
 			// Ocean flows to the right.
 			dx = 1
 		}
-
 		stars[i] = Star{
 			X:       rand.Intn(GridCols),
 			Y:       rand.Intn(GridRows),
@@ -128,60 +127,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tickMsg:
-		// Per-theme animation behavior
-		switch m.theme {
+		if !m.paused {
+			// Per-theme animation behavior
+			switch m.theme {
+			case ThemeStarry:
+				// FALLING STARS:
+				// 1) Move every star one row down each tick.
+				// 2) Wrap to the top when reaching the bottom.
+				// 3) Optional subtle twinkle (toggle visibility with small chance).
+				for i := range m.stars {
+					// subtle twinkle
+					if rand.Intn(100) < 8 {
+						m.stars[i].Visible = !m.stars[i].Visible
+					}
+					// fall
+					m.stars[i].Y++
+					if m.stars[i].Y >= GridRows {
+						m.stars[i].Y = 0
+						// randomize X on re-spawn for a more natural look
+						m.stars[i].X = rand.Intn(GridCols)
+						// occasionally change symbol (if multiple existed)
+						// m.stars[i].Symbol = themes[m.theme].Symbols[rand.Intn(len(themes[m.theme].Symbols))]
+					}
+				}
 
-		case ThemeStarry:
-			// FALLING STARS:
-			// 1) Move every star one row down each tick.
-			// 2) Wrap to the top when reaching the bottom.
-			// 3) Optional subtle twinkle (toggle visibility with small chance).
-			for i := range m.stars {
-				// subtle twinkle
-				if rand.Intn(100) < 8 {
-					m.stars[i].Visible = !m.stars[i].Visible
+			case ThemeFlowers:
+				// Flowers sway: move horizontally and bounce at edges.
+				for i := range m.stars {
+					if rand.Intn(100) < 10 {
+						m.stars[i].Visible = !m.stars[i].Visible
+					}
+					m.stars[i].X += m.stars[i].DX
+					// Bounce when hitting edges
+					if m.stars[i].X < 0 {
+						m.stars[i].X = 0
+						m.stars[i].DX = 1
+					}
+					if m.stars[i].X >= GridCols {
+						m.stars[i].X = GridCols - 1
+						m.stars[i].DX = -1
+					}
 				}
-				// fall
-				m.stars[i].Y++
-				if m.stars[i].Y >= GridRows {
-					m.stars[i].Y = 0
-					// randomize X on re-spawn for a more natural look
-					m.stars[i].X = rand.Intn(GridCols)
-					// occasionally change symbol (if multiple existed)
-					// m.stars[i].Symbol = themes[m.theme].Symbols[rand.Intn(len(themes[m.theme].Symbols))]
-				}
-			}
 
-		case ThemeFlowers:
-			// Flowers sway: move horizontally and bounce at edges.
-			for i := range m.stars {
-				// Optional subtle blinking for life-like feel
-				if rand.Intn(100) < 10 {
-					m.stars[i].Visible = !m.stars[i].Visible
+			case ThemeOcean:
+				// Ocean flows to the right with wrap-around + shimmer.
+				for i := range m.stars {
+					if rand.Intn(100) < 10 {
+						m.stars[i].Visible = !m.stars[i].Visible
+					}
+					m.stars[i].X = (m.stars[i].X + 1) % GridCols
 				}
-				m.stars[i].X += m.stars[i].DX
-				// Bounce when hitting edges
-				if m.stars[i].X < 0 {
-					m.stars[i].X = 0
-					m.stars[i].DX = 1
-				}
-				if m.stars[i].X >= GridCols {
-					m.stars[i].X = GridCols - 1
-					m.stars[i].DX = -1
-				}
-			}
-
-		case ThemeOcean:
-			// Ocean flows to the right with wrap-around + shimmer.
-			for i := range m.stars {
-				if rand.Intn(100) < 10 {
-					m.stars[i].Visible = !m.stars[i].Visible
-				}
-				m.stars[i].X = (m.stars[i].X + 1) % GridCols
 			}
 		}
-
-		// Schedule next tick
+		// Always schedule next tick
 		return m, tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
 			return tickMsg(t)
 		})
@@ -199,6 +197,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "3":
 			m.theme = ThemeOcean
 			m.stars = initStars(m.theme)
+		case "p":
+			m.paused = !m.paused
 		}
 		return m, nil
 	}
@@ -236,7 +236,14 @@ func renderStarsGrid(stars []Star) string {
 
 // View renders the header and the themed content box.
 func (m model) View() string {
-	header := fmt.Sprintf("Theme: %s | 1:Starry  2:Flowers  3:Ocean | q:quit\n\n", themes[m.theme].Name)
+	status := "Running"
+	if m.paused {
+		status = "Paused"
+	}
+	header := fmt.Sprintf(
+		"Theme: %s | 1:Starry  2:Flowers  3:Ocean | p:pause/resume | q:quit\n[Status: %s]\n\n",
+		themes[m.theme].Name, status,
+	)
 	content := renderStarsGrid(m.stars)
 	return styleForTheme(themes[m.theme]).Render(header + content)
 }
@@ -244,12 +251,11 @@ func (m model) View() string {
 // main sets up initial state and starts the Bubble Tea program.
 func main() {
 	rand.Seed(time.Now().UnixNano())
-
 	initial := model{
-		theme: ThemeStarry,
-		stars: initStars(ThemeStarry),
+		theme:  ThemeStarry,
+		stars:  initStars(ThemeStarry),
+		paused: false,
 	}
-
 	p := tea.NewProgram(initial, tea.WithAltScreen())
 	if err := p.Start(); err != nil {
 		fmt.Println("Error running program:", err)
