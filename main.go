@@ -71,16 +71,20 @@ var themes = []Theme{
 
 // model holds the program state.
 type model struct {
-	stars  []Star
-	theme  int  // ThemeStarry / ThemeFlowers / ThemeOcean
-	paused bool // whether animation is paused
+	stars   []Star
+	theme   int  // ThemeStarry / ThemeFlowers / ThemeOcean
+	paused  bool // whether animation is paused
+	bgIndex int  // new: background style index
 }
 
+// Different background options.
+var backgrounds = []string{"#0B1020", "#1B2F2B", "#0E3B5F", "#2E0854", "#003300"}
+
 // styleForTheme builds a lipgloss style for the current theme.
-func styleForTheme(t Theme) lipgloss.Style {
+func styleForTheme(t Theme, bg string) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(lipgloss.Color(t.Foreground)).
-		Background(lipgloss.Color(t.Background)).
+		Background(lipgloss.Color(bg)).
 		Padding(1, 2)
 }
 
@@ -199,6 +203,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stars = initStars(m.theme)
 		case "p":
 			m.paused = !m.paused
+		case "b": // change background
+			m.bgIndex = (m.bgIndex + 1) % len(backgrounds)
 		}
 		return m, nil
 	}
@@ -241,20 +247,21 @@ func (m model) View() string {
 		status = "Paused"
 	}
 	header := fmt.Sprintf(
-		"Theme: %s | 1:Starry  2:Flowers  3:Ocean | p:pause/resume | q:quit\n[Status: %s]\n\n",
+		"Theme: %s | 1:Starry  2:Flowers  3:Ocean | p:pause/resume | b:bg | q:quit\n[Status: %s]\n\n",
 		themes[m.theme].Name, status,
 	)
 	content := renderStarsGrid(m.stars)
-	return styleForTheme(themes[m.theme]).Render(header + content)
+	return styleForTheme(themes[m.theme], backgrounds[m.bgIndex]).Render(header + content)
 }
 
 // main sets up initial state and starts the Bubble Tea program.
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	initial := model{
-		theme:  ThemeStarry,
-		stars:  initStars(ThemeStarry),
-		paused: false,
+		theme:   ThemeStarry,
+		stars:   initStars(ThemeStarry),
+		paused:  false,
+		bgIndex: 0,
 	}
 	p := tea.NewProgram(initial, tea.WithAltScreen())
 	if err := p.Start(); err != nil {
